@@ -36,23 +36,24 @@ def solicitar_cancion():
         "Authorization": f"Bearer {AIRTABLE_PAT}",
         "Content-Type": "application/json"
     }
+# Comentamos el "Estado" para confirmar que ese es el problema
     payload_airtable = {
         "fields": {
-            "Cancion": cancion,                  # Sin acento, igual que en tu tabla
-            "quien_canta": artista,              # Tu columna de artista
-            "Nombre_solicitante": nombre,        # Tu columna de usuario
-            "Dedicatoria": dedicatoria, 
-            "Estado": "💈 En Cola"               # O el estado inicial que prefieras
+            "Cancion": cancion,                  
+            "quien_canta": artista,              
+            "Nombre_solicitante": nombre,        
+            "Dedicatoria": dedicatoria
+            # "Estado": "En Cola" 
         }
     }
 
-    # Intentamos guardar en Airtable primero
     try:
-        requests.post(url_airtable, json=payload_airtable, headers=headers_airtable, timeout=10)
+        res_airtable = requests.post(url_airtable, json=payload_airtable, headers=headers_airtable, timeout=10)
+        # Esto imprimirá en Render exactamente por qué Airtable lo rechaza
+        if res_airtable.status_code != 200:
+            print(f"⚠️ ERROR DE AIRTABLE: {res_airtable.text}")
     except Exception as e:
-        print(f"Error en Airtable: {e}")
-        # Si Airtable falla, podemos decidir si detenemos el proceso o seguimos con Telegram
-        return jsonify({'error': 'Error guardando en la base de datos'}), 500
+        print(f"Error de conexión en Airtable: {e}")
 
     # 2. ENVIAR NOTIFICACIÓN A TELEGRAM AL DJ
     texto_telegram = (
