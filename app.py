@@ -4,7 +4,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 
 app = Flask(__name__)
-CORS(app)
+CORS(app)  # Esencial para permitir que el portal web le envíe datos
 
 # ================= CONFIGURACIÓN DE VARIABLES =================
 AIRTABLE_BASE_ID = os.environ.get("AIRTABLE_BASE_ID", "tu_base_id_aqui")
@@ -17,12 +17,15 @@ TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "tu_chat_id_aqui")
 
 @app.route('/api/solicitar', methods=['POST'])
 def solicitar_cancion():
+    # Recibir los datos del frontend
     data = request.get_json()
+
     cancion = data.get('cancion', '').strip()
     artista = data.get('artista', '').strip()
     nombre = data.get('nombre', '').strip()
     dedicatoria = data.get('dedicatoria', '').strip()
 
+    # Validación básica
     if not cancion or not artista or not nombre:
         return jsonify({'error': 'Faltan campos obligatorios'}), 400
 
@@ -46,7 +49,7 @@ def solicitar_cancion():
     try:
         res_airtable = requests.post(url_airtable, json=payload_airtable, headers=headers_airtable, timeout=10)
         if res_airtable.status_code == 200:
-            # Capturamos el ID único que Airtable le asignó a esta fila
+            # Capturamos el ID único de la fila para los botones
             record_id = res_airtable.json().get('id')
         else:
             print(f"⚠️ ERROR DE AIRTABLE: {res_airtable.text}")
@@ -62,7 +65,7 @@ def solicitar_cancion():
         f"💬 *Nota:* {dedicatoria}"
     )
 
-    # Solo mostramos los botones si Airtable nos devolvió el ID correctamente
+    # Solo agregamos los botones si Airtable nos devolvió el ID
     botones = []
     if record_id:
         botones = [
@@ -85,6 +88,7 @@ def solicitar_cancion():
     except Exception as e:
         print(f"Error en Telegram: {e}")
 
+    # Respuesta de éxito al portal web
     return jsonify({'status': 'ok', 'mensaje': 'Enviado exitosamente'}), 200
 
 
@@ -95,23 +99,29 @@ def solicitar_cancion():
 def telegram_webhook():
     data = request.get_json()
     
-    # Verificamos si la petición viene de un clic en un botón (callback_query)
     if "callback_query" in data:
         callback = data["callback_query"]
         callback_id = callback["id"]
         chat_id = callback["message"]["chat"]["id"]
         message_id = callback["message"]["message_id"]
-        callback_data = callback["data"] # Ejemplo: "puesta_rec123ABC"
+        callback_data = callback["data"]
         
-        # Separamos la acción del ID de Airtable
+        # Recuperamos el texto original del mensaje
+        texto_original = callback["message"].get("text", "")
+        
         partes = callback_data.split('_')
         if len(partes) == 2:
             accion, record_id = partes
             
-            # ATENCIÓN: Estos textos deben existir exactamente igual en tu columna "Estado" de Airtable
-            nuevo_estado = "✅ Ya Sonó" if accion == "puesta" else "❌ Rechazada"
+            # Definimos el estado para Airtable y el "Sello" visual para Telegram
+            if accion == "puesta":
+                nuevo_estado = "👍 Aceptada"
+                sello_telegram = "\n\n✨ ESTATUS: ACEPTADA ✨"
+            else:
+                nuevo_estado = "❌ Rechazada"
+                sello_telegram = "\n\n🚫 ESTATUS: RECHAZADA 🚫"
                 
-            # 1. Actualizamos el registro en Airtable (usando PATCH)
+            # 1. Actualizamos el registro en Airtable
             url_update = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{AIRTABLE_TABLE_NAME}/{record_id}"
             headers = {
                 "Authorization": f"Bearer {AIRTABLE_PAT}",
@@ -120,14 +130,16 @@ def telegram_webhook():
             payload_update = {"fields": {"Estado": nuevo_estado}}
             requests.patch(url_update, json=payload_update, headers=headers)
             
-            # 2. Quitamos los botones del mensaje de Telegram para que no los vuelvan a pulsar
-            requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/editMessageReplyMarkup", json={
+            # 2. Editamos el mensaje en Telegram (Agregamos el sello y quitamos botones)
+            nuevo_texto = texto_original + sello_telegram
+            requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/editMessageText", json={
                 "chat_id": chat_id,
                 "message_id": message_id,
-                "reply_markup": {"inline_keyboard": []} # Botones vacíos
+                "text": nuevo_texto,
+                "reply_markup": {"inline_keyboard": []} 
             })
             
-            # 3. Le respondemos a Telegram para que deje de parpadear el botón
+            # 3. Le respondemos a Telegram para que deje de cargar el botoncito
             requests.post(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/answerCallbackQuery", json={
                 "callback_query_id": callback_id,
                 "text": f"Canción {nuevo_estado}"
@@ -137,9 +149,11 @@ def telegram_webhook():
 
 # ==============================================================
 
+# Ruta de prueba para verificar que el servidor está vivo
 @app.route('/', methods=['GET'])
 def health_check():
     return "API DJ Nova Sets Activa y Funcionando 🎧", 200
 
 if __name__ == '__main__':
+    # Puerto para pruebas locales
     app.run(host='0.0.0.0', port=5000, debug=True)
