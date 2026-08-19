@@ -109,7 +109,7 @@ def telegram_webhook():
             accion, record_id = partes
             
             # ATENCIÓN: Estos textos deben existir exactamente igual en tu columna "Estado" de Airtable
-            nuevo_estado = "✅ Ya Sonó" if accion == "puesta" else "❌ Omitida"
+            nuevo_estado = "✅ Ya Sonó" if accion == "puesta" else "❌ Rechazada"
                 
             # 1. Actualizamos el registro en Airtable (usando PATCH)
             url_update = f"https://api.airtable.com/v0/{AIRTABLE_BASE_ID}/{AIRTABLE_TABLE_NAME}/{record_id}"
